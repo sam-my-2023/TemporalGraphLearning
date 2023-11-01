@@ -77,7 +77,7 @@ class LSTM_only(nn.Module):
         self.rnn_layer = rnn_layer
         self.out_layer = out_layer
     
-    def forward(self, batch_inputs, batch_graph):
+    def forward(self, batch_inputs, batch_graph=None):
         '''
         the input dims follows (batch, seq_length, num_companies, feature_size) 
         However, for the convenience (without set batch_first=True in LSTM).
@@ -86,7 +86,7 @@ class LSTM_only(nn.Module):
         
         if batch_inputs.dim() == 4:
             batch_inputs = batch_inputs.permute(1,0,2,3)
-            assert batch_inputs.size(1) == batch_graph.size(0) and batch_graph.dim() == 3
+            # assert batch_inputs.size(1) == batch_graph.size(0) and batch_graph.dim() == 3
             batch_inputs = batch_inputs.flatten(start_dim= 1,end_dim=2)
         seq_embedding, (hidden_rnn_embedding,_)= self.rnn_layer(batch_inputs)
         rnn_embedding = hidden_rnn_embedding.permute(1,0,2)
@@ -94,6 +94,41 @@ class LSTM_only(nn.Module):
         # aggregate_graphs_along_seq_dim = torch.sum(batch_graph,dim=0)
         output = self.out_layer(rnn_embedding)
         # output = output.unflatten(dim=0, sizes= flatten_size)
+        return output
+
+
+class Seq2seq(nn.Module):
+    def __init__(self, encoder, decoder):
+        super().__init__()
+        self.encoder = encoder
+        self.decoder = decoder
+    
+    def forward(self, batch_inputs, batch_covariate, batch_graph=None):
+        '''
+        the input dims follows (batch, seq_length, num_companies, feature_size) 
+        However, for the convenience (without set batch_first=True in LSTM).
+        the input dim is permuted as -> (seq_length, batch_size, num_companies, feature_size ) if data is batched.
+        '''
+        is_batched = batch_inputs.dim() == 4
+        if is_batched:
+            batch_inputs = batch_inputs.permute(1,0,2,3)
+            flatten_size = batch_inputs.size()[1:3]
+            # assert batch_inputs.size(1) == batch_graph.size(0) and batch_graph.dim() == 3
+            batch_inputs = batch_inputs.flatten(start_dim= 1,end_dim=2)
+            
+            batch_covariate = batch_covariate.permute(1,0,2,3)
+            # assert batch_inputs.size(1) == batch_graph.size(0) and batch_graph.dim() == 3
+            batch_covariate = batch_covariate.flatten(start_dim= 1,end_dim=2)
+            
+        seq_embedding, (hidden_embedding, cells)= self.encoder(batch_inputs)
+        # hidden_embedding = hidden_embedding.permute(1,0,2)
+        # hidden_embedding = hidden_embedding.reshape(hidden_embedding.size(0), -1)
+        # aggregate_graphs_along_seq_dim = torch.sum(batch_graph,dim=0)
+        output, _ = self.decoder(batch_covariate, (hidden_embedding,cells))
+        # print( batch_inputs.size(),batch_covariate.size(),hidden_embedding.size(),output.size())
+        if is_batched:
+            output = output.unflatten(dim=1, sizes= flatten_size)
+            output = output.permute(1,0,2,3)
         return output
     
 
